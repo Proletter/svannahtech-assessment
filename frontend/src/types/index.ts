@@ -1,3 +1,4 @@
+// frontend/src/types.ts
 export interface Game {
     gameId: string;
     homeTeam: string;
@@ -5,24 +6,12 @@ export interface Game {
     homeScore: number;
     awayScore: number;
     timeElapsed: number;
-    events: GameEvent[];
-  }
-  
-  export interface GameEvent {
-    type: string;
-    team: 'home' | 'away';
-    player: string;
-    minute: number;
-  }
-  
-  export interface Bet {
-    id: string;
-    gameId: string;
-    betType: string;
-    pick: string;
-    amount: number;
-    odds: number;
-    status: 'pending' | 'won' | 'lost';
+    events: Array<{
+      type: string;
+      team: string;
+      player: string;
+      minute: number;
+    }>;
   }
   
   export interface LeaderboardEntry {
@@ -31,4 +20,12 @@ export interface Game {
     totalWinnings: number;
     totalBets: number;
     winRate: number;
+  }
+  
+  export interface Bet {
+    gameId: string;
+    amount: number;
+    pick: 'home' | 'away';
+    betType: string;
+    odds: number;
   }

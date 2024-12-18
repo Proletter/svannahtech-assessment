@@ -1,3 +1,4 @@
+// frontend/src/components/BettingSlip.tsx
 import React, { useState } from 'react';
 import { Game } from '../types';
 
@@ -6,11 +7,17 @@ interface BettingSlipProps {
   onPlaceBet: (bet: any) => void;
 }
 
-const BettingSlip = ({ game, onPlaceBet }: BettingSlipProps) => {
-  const [amount, setAmount] = useState('');
-  const [pick, setPick] = useState('home');
+const BettingSlip: React.FC<BettingSlipProps> = ({ game, onPlaceBet }) => {
+  const [amount, setAmount] = useState<string>('');
+  const [pick, setPick] = useState<'home' | 'away'>('home');
 
-  if (!game) return null;
+  if (!game) {
+    return (
+      <div className="p-4 bg-white rounded-lg shadow">
+        <h3 className="text-lg font-semibold text-gray-400">Select a game to place a bet</h3>
+      </div>
+    );
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +40,7 @@ const BettingSlip = ({ game, onPlaceBet }: BettingSlipProps) => {
           <select 
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
             value={pick}
-            onChange={(e) => setPick(e.target.value)}
+            onChange={(e) => setPick(e.target.value as 'home' | 'away')}
           >
             <option value="home">{game.homeTeam}</option>
             <option value="away">{game.awayTeam}</option>
