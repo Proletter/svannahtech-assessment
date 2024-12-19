@@ -1,19 +1,34 @@
-// frontend/src/components/BettingSlip.tsx
 import React, { useState } from 'react';
-import { Game } from '../types';
+import { useAuth } from '../contexts/AuthContext.tsx';
+
+interface Game {
+  gameId: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  timeElapsed: number;
+  events: Array<{
+    type: string;
+    team: string;
+    player: string;
+    minute: number;
+  }>;
+}
 
 interface BettingSlipProps {
   game: Game | null;
-  onPlaceBet: (bet: any) => void;
+  onPlaceBet: (betData: any) => void;
 }
 
 const BettingSlip: React.FC<BettingSlipProps> = ({ game, onPlaceBet }) => {
   const [amount, setAmount] = useState<string>('');
   const [pick, setPick] = useState<'home' | 'away'>('home');
+  const { isAuthenticated, user } = useAuth();
 
   if (!game) {
     return (
-      <div className="p-4 bg-white rounded-lg shadow">
+      <div className="p-4">
         <h3 className="text-lg font-semibold text-gray-400">Select a game to place a bet</h3>
       </div>
     );
@@ -21,18 +36,19 @@ const BettingSlip: React.FC<BettingSlipProps> = ({ game, onPlaceBet }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAuthenticated) return;
+
     onPlaceBet({
       gameId: game.gameId,
       amount: Number(amount),
       pick,
-      betType: 'winner',
-      odds: pick === 'home' ? 1.8 : 2.0
+      userId: user?.id
     });
     setAmount('');
   };
 
   return (
-    <div className="p-4 bg-white rounded-lg shadow">
+    <div className="p-4">
       <h3 className="text-lg font-semibold mb-4">Place Bet</h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -57,12 +73,18 @@ const BettingSlip: React.FC<BettingSlipProps> = ({ game, onPlaceBet }) => {
             required
           />
         </div>
-        <button
-          type="submit"
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
-        >
-          Place Bet
-        </button>
+        {isAuthenticated ? (
+          <button
+            type="submit"
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
+          >
+            Place Bet
+          </button>
+        ) : (
+          <div className="text-center text-red-500">
+            Please log in to place bets
+          </div>
+        )}
       </form>
     </div>
   );

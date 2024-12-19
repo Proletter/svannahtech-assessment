@@ -1,6 +1,19 @@
-// frontend/src/components/LiveGames.tsx
 import React from 'react';
-import { Game } from '../types';
+
+interface Game {
+  gameId: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  timeElapsed: number;
+  events: Array<{
+    type: string;
+    team: string;
+    player: string;
+    minute: number;
+  }>;
+}
 
 interface LiveGamesProps {
   games: Game[];
@@ -8,18 +21,10 @@ interface LiveGamesProps {
 }
 
 const LiveGames: React.FC<LiveGamesProps> = ({ games, onSelectGame }) => {
-  if (games.length === 0) {
-    return (
-      <div className="p-4 text-center text-gray-500">
-        No live games available at the moment
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-bold mb-4">Live Games</h2>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         {games.map(game => (
           <div 
             key={game.gameId} 
@@ -35,6 +40,11 @@ const LiveGames: React.FC<LiveGamesProps> = ({ games, onSelectGame }) => {
               <div className="text-2xl font-bold">{game.homeScore} - {game.awayScore}</div>
               <div className="font-semibold">{game.awayTeam}</div>
             </div>
+            {game.events[game.events.length - 1]?.type === 'goal' && (
+              <div className="mt-2 text-sm text-green-600">
+                GOAL! {game.events[game.events.length - 1].player} ({game.events[game.events.length - 1].minute}')
+              </div>
+            )}
           </div>
         ))}
       </div>
