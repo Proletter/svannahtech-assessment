@@ -10,11 +10,24 @@ import { authRoutes } from './routes/auth';
 
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+app.use(cors({
+  origin: 'http://localhost:3002', 
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+const wss = new WebSocketServer({ 
+  server,
+  path: '/ws',  
+  verifyClient: (info, callback) => {
+    const origin = info.origin;
+    const allowed = origin === 'http://localhost:3002';
+    callback(allowed);
+  }
+});
 
 const gameService = new GameService(liveGameData);
 
-app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.get('/api/test-db', async (req, res) => {

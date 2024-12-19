@@ -1,4 +1,3 @@
-// frontend/src/types.ts
 export interface Game {
     gameId: string;
     homeTeam: string;

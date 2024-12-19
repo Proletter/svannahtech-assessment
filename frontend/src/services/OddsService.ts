@@ -1,4 +1,3 @@
-// frontend/src/services/OddsService.ts
 export interface GameOdds {
     gameId: string;
     homeOdds: number;

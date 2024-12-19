@@ -47,108 +47,123 @@ function App() {
     async function fetchGames() {
       try {
         setIsLoading(true);
-        const response = await fetch('http://localhost:3000/api/games');
-        if (!response.ok) throw new Error('Failed to fetch games');
-        const data = await response.json();
-        console.log('Initial games data:', data);
-        setGames(data);
         setError(null);
+        console.log('Fetching games from:', `${process.env.REACT_APP_API_URL}/api/games`);
+        
+        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/games`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        console.log('Received games data:', data);
+        
+        if (!Array.isArray(data)) {
+          throw new Error('Invalid data format received');
+        }
+  
+        setGames(data);
       } catch (err) {
+        const error = err as Error;
+        console.error('Error fetching games:', error);
         setError('Failed to load games. Please try again later.');
-        console.error('Error fetching games:', err);
       } finally {
         setIsLoading(false);
       }
     }
-
+  
     fetchGames();
   }, []);
 
-  // Setup WebSocket connection
   useEffect(() => {
     function connectWebSocket() {
       if (!wsRef.current) {
         console.log('Establishing WebSocket connection...');
-        const ws = new WebSocket('ws://localhost:3000');
-
+        // Properly format the WebSocket URL
+        const wsUrl = new URL('/ws', process.env.REACT_APP_WS_URL || 'ws://localhost:3000');
+        const ws = new WebSocket(wsUrl.toString());
+  
         ws.onopen = () => {
           console.log('WebSocket connection established');
           setWsConnected(true);
         };
-
+  
         ws.onmessage = (event) => {
           if (!mountedRef.current) return;
-
-          const data = JSON.parse(event.data);
-          console.log('Received WebSocket message:', data);
-
-          if (data.type === 'gameUpdate') {
-            setGames(prevGames => {
-              return prevGames.map(game => {
-                if (game.gameId === data.gameId) {
-                  const updatedGame = {
-                    ...game,
-                    timeElapsed: data.update.timeElapsed,
-                    ...(data.update.eventType === 'goal' && {
-                      homeScore: data.update.team === 'home' ? game.homeScore + 1 : game.homeScore,
-                      awayScore: data.update.team === 'away' ? game.awayScore + 1 : game.awayScore,
-                    }),
-                    events: data.update.eventType ? [
-                      ...game.events,
-                      {
-                        type: data.update.eventType,
-                        team: data.update.team,
-                        player: data.update.scorer || 'Unknown Player',
-                        minute: Math.floor(data.update.timeElapsed)
-                      }
-                    ] : game.events
-                  };
-
-                  if (selectedGame?.gameId === game.gameId) {
-                    setSelectedGame(updatedGame);
+  
+          try {
+            const data = JSON.parse(event.data);
+            console.log('Received WebSocket message:', data);
+  
+            if (data.type === 'initialState' && Array.isArray(data.games)) {
+              console.log('Setting initial games state:', data.games);
+              setGames(data.games);
+            } else if (data.type === 'gameUpdate') {
+              console.log('Processing game update:', data);
+              setGames(prevGames => {
+                return prevGames.map(game => {
+                  if (game.gameId === data.gameId) {
+                    // Create updated game object
+                    const updatedGame = {
+                      ...game,
+                      timeElapsed: data.update.timeElapsed,
+                      homeScore: data.update.currentState?.homeScore ?? game.homeScore,
+                      awayScore: data.update.currentState?.awayScore ?? game.awayScore,
+                      events: data.update.currentState?.events ?? game.events,
+                    };
+  
+                    // If this is the selected game, update it too
+                    if (selectedGame?.gameId === game.gameId) {
+                      setSelectedGame(updatedGame);
+                    }
+  
+                    console.log(`Game ${game.gameId} updated:`, updatedGame);
+                    return updatedGame;
                   }
-
-                  return updatedGame;
-                }
-                return game;
+                  return game;
+                });
               });
-            });
+            }
+          } catch (error) {
+            console.error('Error processing WebSocket message:', error);
           }
         };
-
-        ws.onclose = () => {
-          console.log('WebSocket connection closed');
+  
+        ws.onclose = (event) => {
+          console.log('WebSocket connection closed:', event.reason);
           setWsConnected(false);
           wsRef.current = null;
-
+  
+          // Attempt to reconnect after 3 seconds if the component is still mounted
           if (mountedRef.current) {
             console.log('Attempting to reconnect in 3 seconds...');
             setTimeout(connectWebSocket, 3000);
           }
         };
-
+  
         ws.onerror = (error) => {
           console.error('WebSocket error:', error);
           setWsConnected(false);
         };
-
+  
         wsRef.current = ws;
       }
     }
-
-    if (!isLoading && games.length > 0) {
+  
+    // Only connect WebSocket if we're not loading and have games
+    if (!isLoading) {
       connectWebSocket();
     }
-
+  
+    // Cleanup function
     return () => {
+      console.log('Cleaning up WebSocket connection...');
       mountedRef.current = false;
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [isLoading, games.length, selectedGame?.gameId]);
-
+  }, [isLoading, selectedGame?.gameId]);
   const handlePlaceBet = async (betData: { gameId: string; pick: string; amount: number }) => {
     try {
       const token = localStorage.getItem('token');
