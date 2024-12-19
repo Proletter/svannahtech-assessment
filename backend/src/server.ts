@@ -1,66 +1,109 @@
-// backend/src/server.ts
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import cors from 'cors';
+import { initializeDatabase } from './config/database';
 import { GameService } from './services/GameService';
-import { liveGameData } from './models';  // Using the original export name
+import { liveGameData } from './models';
+import { Game as GameModel } from './models/database/Game';
+import { authRoutes } from './routes/auth';
 
 const app = express();
 const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
-// Initialize GameService with the original liveGameData
 const gameService = new GameService(liveGameData);
 
 app.use(cors());
 app.use(express.json());
-
-// Routes
-app.get('/api/games', (req, res) => {
-  const games = gameService.getAllGames();
-  res.json(games);
-});
-
-app.get('/api/games/:gameId', (req, res) => {
-  const game = gameService.getGame(req.params.gameId);
-  if (!game) {
-    return res.status(404).json({ error: 'Game not found' });
+app.use('/api/auth', authRoutes);
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const User = require('./models/database/User').User;
+    const testUser = await User.create({
+      username: 'testuser',
+      email: 'test@test.com',
+      passwordHash: 'test',
+      balance: 1000
+    });
+    res.json({ message: 'Database working', user: testUser });
+  } catch (err) {
+    const error = err as Error;
+    res.status(500).json({ error: error.message || 'An unknown error occurred' });
   }
-  res.json(game);
 });
 
-// WebSocket connection handler
+
+app.get('/api/games', async (req, res) => {
+  try {
+    let games = await GameModel.findAll({
+      include: ['events']
+    });
+
+    if (games.length === 0) {
+      console.log('No games found in database, initializing with sample data...');
+      games = await GameModel.bulkCreate(liveGameData.map(game => ({
+        ...game,
+        events: game.events
+      })), {
+        include: ['events']
+      });
+    }
+
+    res.json(games);
+  } catch (err) {
+    const error = err as Error;
+    console.error('Error fetching games:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch games' });
+  }
+});
+
 wss.on('connection', (ws) => {
   console.log('Client connected');
-  
-  // Send initial game state
-  ws.send(JSON.stringify({
-    type: 'initialState',
-    games: gameService.getAllGames()
-  }));
 
-  // Subscribe to game updates
-  gameService.on('gameUpdate', (update) => {
+  gameService.getAllGames().then(games => {
     ws.send(JSON.stringify({
-      type: 'gameUpdate',
-      update
+      type: 'initialState',
+      games
     }));
   });
 
+  const updateHandler = (update: any) => {
+    console.log('Sending update to client:', update);
+    ws.send(JSON.stringify(update));
+  };
+
+  gameService.on('gameUpdate', updateHandler);
+
   ws.on('close', () => {
     console.log('Client disconnected');
+    gameService.off('gameUpdate', updateHandler);
   });
 });
 
-// Cleanup on server shutdown
-process.on('SIGTERM', () => {
-  gameService.cleanup();
-  server.close();
-});
+async function startServer() {
+  try {
+    console.log('Initializing database...');
+    const dbInitialized = await initializeDatabase();
+    if (!dbInitialized) {
+      throw new Error('Failed to initialize database');
+    }
+    console.log('Database initialized successfully');
 
-const PORT = process.env.PORT || 3000;
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+  } catch (err) {
+    const error = err as Error;
+    console.error('Failed to start server:', error.message);
+    process.exit(1);
+  }
+}
+
+startServer();
+
+export { app, server };
+
+

@@ -1,5 +1,3 @@
-// backend/src/types/index.ts
-// These types are designed to match the existing data model exactly
 export interface LiveGame {
     gameId: string;
     homeTeam: string;
@@ -30,8 +28,7 @@ export interface LiveGame {
     amount: number;
     odds: number;
   }
-  
-  // Type for game updates to match the generateLiveUpdate function's return type
+
   export interface GameUpdate {
     gameId: string;
     timeElapsed: number;

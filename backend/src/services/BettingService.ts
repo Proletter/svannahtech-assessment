@@ -1,51 +1,67 @@
-import { Bet, User } from '../types';
-import { EventEmitter } from 'events';
+import { Bet, User, Game } from '../models/database';
+import { withTransaction } from '../config/database';
 
-export class BettingService extends EventEmitter {
-  private bets: Map<string, Bet>;
-  private users: Map<string, User>;
+export class BettingService {
+  async placeBet(userId: number, betData: any) {
+    return withTransaction(async (transaction) => {
+      const user = await User.findByPk(userId, { transaction });
+      if (!user || user.balance < betData.amount) {
+        throw new Error('Insufficient balance');
+      }
 
-  constructor(initialUsers: User[]) {
-    super();
-    this.bets = new Map();
-    this.users = new Map(initialUsers.map(user => [user.id, user]));
+      const bet = await Bet.create({
+        userId,
+        gameId: betData.gameId,
+        betType: betData.betType,
+        pick: betData.pick,
+        amount: betData.amount,
+        odds: betData.odds,
+        status: 'pending'
+      }, { transaction });
+      await user.update({
+        balance: user.balance - betData.amount
+      }, { transaction });
+
+      return bet;
+    });
   }
 
-  public placeBet(bet: Omit<Bet, 'id' | 'status' | 'createdAt'>): Bet | null {
-    const user = this.users.get(bet.userId);
-    if (!user || user.balance < bet.amount) return null;
+  async settleBet(betId: number) {
+    return withTransaction(async (transaction) => {
+      const bet = await Bet.findByPk(betId, {
+        include: [User, Game],
+        transaction
+      });
 
-    const newBet: Bet = {
-      ...bet,
-      id: `B${this.bets.size + 1}`,
-      status: 'pending',
-      createdAt: new Date()
-    };
+      if (!bet || bet.status !== 'pending') {
+        throw new Error('Invalid bet');
+      }
 
-    this.bets.set(newBet.id, newBet);
-    user.balance -= bet.amount;
-    this.emit('betPlaced', newBet);
+      const won = this.determineBetOutcome(bet);
 
-    return newBet;
+      await bet.update({
+        status: won ? 'won' : 'lost'
+      }, { transaction });
+
+      if (won) {
+        await bet.user.update({
+          balance: bet.user.balance + (bet.amount * bet.odds)
+        }, { transaction });
+      }
+
+      return bet;
+    });
   }
 
-  public settleBet(betId: string, outcome: 'won' | 'lost'): void {
-    const bet = this.bets.get(betId);
-    if (!bet || bet.status !== 'pending') return;
-
-    bet.status = outcome;
-    const user = this.users.get(bet.userId);
-    if (!user) return;
-
-    if (outcome === 'won') {
-      user.balance += bet.amount * bet.odds;
+  private determineBetOutcome(bet: Bet): boolean {
+    const game = bet.game;
+    if (bet.betType === 'winner') {
+      if (bet.pick === 'home') {
+        return game.homeScore > game.awayScore;
+      } else {
+        return game.awayScore > game.homeScore;
+      }
     }
-
-    this.emit('betSettled', { bet, user });
-  }
-
-  public getUserBets(userId: string): Bet[] {
-    return Array.from(this.bets.values())
-      .filter(bet => bet.userId === userId);
+    return false;
   }
 }

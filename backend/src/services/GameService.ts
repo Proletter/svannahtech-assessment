@@ -1,69 +1,143 @@
-// backend/src/services/GameService.ts
 import { EventEmitter } from 'events';
-import { LiveGame, GameUpdate } from '../types';
+import { Game as GameModel } from '../models/database/Game';
+import { GameEvent as GameEventModel } from '../models/database/GameEvent';
 import { generateLiveUpdate } from '../models';
 
+interface GameUpdate {
+  gameId: string;
+  timeElapsed: number;
+  eventType?: string;
+  team?: 'home' | 'away';
+  scorer?: string;
+}
+
 export class GameService extends EventEmitter {
-  private games: Map<string, LiveGame>;
   private updateInterval: NodeJS.Timeout | null = null;
 
-  constructor(initialGames: LiveGame[]) {
+  constructor(initialGames: any[]) {
     super();
-    this.games = new Map(initialGames.map(game => [game.gameId, game]));
-    
-    // Start periodic updates
+    this.initializeGames(initialGames);
     this.startUpdates();
   }
 
-  private startUpdates() {
-    // Generate updates every 10 seconds
-    this.updateInterval = setInterval(() => {
-      // Randomly select a game to update
-      const gameIds = Array.from(this.games.keys());
-      const randomGameId = gameIds[Math.floor(Math.random() * gameIds.length)];
-      
-      // Generate and process update
-      const update = generateLiveUpdate(randomGameId);
-      if (update) {
-        this.processUpdate(update);
-      }
-    }, 10000);
-  }
-
-  private processUpdate(update: GameUpdate) {
-    const game = this.games.get(update.gameId);
-    if (!game) return;
-
-    // Update game state
-    game.timeElapsed = update.timeElapsed;
-    
-    if (update.eventType === 'goal') {
-      // Add event to the game's events array
-      game.events.push({
-        type: update.eventType,
-        team: update.team,
-        player: update.scorer || 'Unknown Player',
-        minute: Math.floor(update.timeElapsed)
+  private async initializeGames(initialGames: any[]) {
+    try {
+      await GameModel.destroy({ 
+        where: {},
+        truncate: true,
+        cascade: true
       });
 
-      // Update score
-      if (update.team === 'home') {
-        game.homeScore++;
-      } else {
-        game.awayScore++;
+      for (const gameData of initialGames) {
+        try {
+          const game = await GameModel.create({
+            gameId: gameData.gameId,
+            homeTeam: gameData.homeTeam,
+            awayTeam: gameData.awayTeam,
+            homeScore: gameData.homeScore,
+            awayScore: gameData.awayScore,
+            timeElapsed: gameData.timeElapsed
+          });
+
+          if (gameData.events && gameData.events.length > 0) {
+            for (const event of gameData.events) {
+              await GameEventModel.create({
+                gameId: game.id, // Use the auto-generated id
+                type: event.type,
+                team: event.team,
+                player: event.player,
+                minute: event.minute
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error creating game:', error);
+        }
       }
+      console.log('Games initialized successfully');
+    } catch (error) {
+      console.error('Error initializing games:', error);
     }
-
-    // Emit update event
-    this.emit('gameUpdate', update);
   }
 
-  public getGame(gameId: string): LiveGame | undefined {
-    return this.games.get(gameId);
+  private async startUpdates() {
+    this.updateInterval = setInterval(async () => {
+      try {
+        const games = await GameModel.findAll();
+        if (games.length === 0) return;
+
+        const randomGame = games[Math.floor(Math.random() * games.length)];
+        const update = generateLiveUpdate(randomGame.gameId);
+        
+        if (update) {
+          await this.processUpdate(update);
+        }
+      } catch (error) {
+        console.error('Error generating update:', error);
+      }
+    }, 5000);
   }
 
-  public getAllGames(): LiveGame[] {
-    return Array.from(this.games.values());
+  private async processUpdate(update: GameUpdate) {
+    try {
+      const game = await GameModel.findOne({
+        where: { gameId: update.gameId },
+        include: ['events']
+      });
+
+      if (!game) return;
+
+      // Update game state
+      await game.update({
+        timeElapsed: update.timeElapsed
+      });
+
+      if (update.eventType === 'goal') {
+        // Update score
+        await game.update({
+          homeScore: update.team === 'home' ? game.homeScore + 1 : game.homeScore,
+          awayScore: update.team === 'away' ? game.awayScore + 1 : game.awayScore
+        });
+
+        // Add new event
+        await GameEventModel.create({
+          gameId: game.id, // Use the auto-generated id
+          type: update.eventType,
+          team: update.team,
+          player: update.scorer || 'Unknown Player',
+          minute: Math.floor(update.timeElapsed)
+        });
+      }
+
+      await game.reload({ include: ['events'] });
+      this.emit('gameUpdate', {
+        type: 'gameUpdate',
+        gameId: game.gameId,
+        update: {
+          ...update,
+          currentState: {
+            homeScore: game.homeScore,
+            awayScore: game.awayScore,
+            timeElapsed: game.timeElapsed,
+            events: game.events
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Error processing update:', error);
+    }
+  }
+
+  public async getAllGames() {
+    try {
+      return await GameModel.findAll({
+        include: ['events']
+      });
+    } catch (error) {
+      console.error('Error fetching games:', error);
+      return [];
+    }
   }
 
   public cleanup() {
